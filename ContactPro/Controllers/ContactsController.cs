@@ -36,7 +36,7 @@ namespace ContactPro.Controllers
 
         // GET: Contacts
         [Authorize]
-        public async Task<IActionResult> Index()
+        public IActionResult Index(int categoryId)
         {
             
             var contacts = new List<Contact>();
@@ -50,16 +50,61 @@ namespace ContactPro.Controllers
 
             var categories = appUser.Categories;
 
-            contacts = appUser.Contacts.OrderBy(c => c.LastName)
-                                       .ThenBy(c => c.FirstName)
-                                       .ToList();
+            if(categoryId == 0)
+            {
+                contacts = appUser.Contacts.OrderBy(c => c.LastName)
+                           .ThenBy(c => c.FirstName)
+                           .ToList();
+            }
+            else
+            {
+                contacts = appUser.Categories.FirstOrDefault(c => c.Id == categoryId)
+                                             .Contacts
+                                             .OrderBy(c => c.LastName)
+                                             .ThenBy(c => c.FirstName)
+                                             .ToList();
+            }
 
-            ViewData["CategoryId"] = new SelectList(categories, "Id", "Name");
-
+            ViewData["CategoryId"] = new SelectList(categories, "Id", "Name", categoryId);
 
 
             return View(contacts);
         }
+
+
+        // SearchBox Action 
+        [Authorize]
+        public IActionResult SearchContacts(string searchString)
+        {
+            string appUserId = _userManager.GetUserId(User);
+            var contacts = new List<Contact>();
+
+            AppUser? appUser = _context.Users
+                                      .Include(c => c.Contacts)
+                                      .ThenInclude(c => c.Categories)
+                                      .FirstOrDefault(u => u.Id == appUserId);
+
+            if(String.IsNullOrEmpty(searchString))
+            {
+                contacts = appUser.Contacts
+                                  .OrderBy(c => c.LastName)
+                                  .ThenBy(c => c.FirstName)
+                                  .ToList();
+            }
+            else
+            {
+                contacts = appUser.Contacts.Where(c => c.FullName!.ToLower().Contains(searchString.ToLower()))
+                                  .OrderBy(c => c.LastName)
+                                  .ThenBy(c => c.FirstName)
+                                  .ToList();
+            }
+
+            ViewData["CategoryId"] = new SelectList(appUser.Categories, "Id", "Name", 0);
+
+            return View(nameof(Index), contacts);
+
+        }
+
 
         // GET: Contacts/Details/5
         [Authorize]
@@ -146,12 +191,21 @@ namespace ContactPro.Controllers
                 return NotFound();
             }
 
-            var contact = await _context.Contacts.FindAsync(id);
+            string? appUserId = _userManager.GetUserId(User);
+
+            // var contact = await _context.Contacts.FindAsync(id);
+            var contact = await _context.Contacts.Where(c => c.Id == id && c.AppUserID == appUserId)
+                                                 .FirstOrDefaultAsync();
+
             if (contact == null)
             {
                 return NotFound();
             }
-            ViewData["AppUserID"] = new SelectList(_context.Users, "Id", "Id", contact.AppUserID);
+
+            ViewData["StatesList"] = new SelectList(Enum.GetValues(typeof(States)).Cast<States>().ToList());
+            ViewData["CategoryList"] = new MultiSelectList(await _addressBookService.GetUserCategoriesAsync(appUserId), "Id", "Name", await _addressBookService.GetContactCategoryIdsAsync(contact.Id));
+
+
             return View(contact);
         }
 
@@ -171,6 +225,14 @@ namespace ContactPro.Controllers
             {
                 try
                 {
+                    contact.Created = DateTime.SpecifyKind(contact.Created.Value, DateTimeKind.Utc);
+
+                    if(contact.BirthDate != null)
+                    {
+                        contact.BirthDate = DateTime.SpecifyKind(contact.BirthDate.Value, DateTimeKind.Utc);
+                    }
+
+
                     _context.Update(contact);
                     await _context.SaveChangesAsync();
                 }
