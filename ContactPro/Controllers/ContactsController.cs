@@ -340,14 +340,16 @@ namespace ContactPro.Controllers
         [Authorize]
         public async Task<IActionResult> Delete(int? id)
         {
-            if (id == null)
+            if (id == null || _context.Contacts == null)
             {
                 return NotFound();
             }
 
+            string? appUserId = _userManager.GetUserId(User);
+
             var contact = await _context.Contacts
-                .Include(c => c.AppUser)
-                .FirstOrDefaultAsync(m => m.Id == id);
+                                .FirstOrDefaultAsync(c => c.Id == id && c.AppUserID == appUserId);
+
             if (contact == null)
             {
                 return NotFound();
@@ -361,13 +363,17 @@ namespace ContactPro.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-            var contact = await _context.Contacts.FindAsync(id);
+
+            string? appUserId = _userManager.GetUserId(User);
+
+            var contact = await _context.Contacts.FirstOrDefaultAsync(c => c.Id == id && c.AppUserID == appUserId);
+
             if (contact != null)
             {
                 _context.Contacts.Remove(contact);
+                await _context.SaveChangesAsync();
             }
 
-            await _context.SaveChangesAsync();
             return RedirectToAction(nameof(Index));
         }
 
